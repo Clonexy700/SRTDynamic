@@ -1,5 +1,4 @@
-﻿#include <srt.h>
-#include <iostream>
+﻿#include <iostream>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -15,8 +14,7 @@
 #include <cmath>
 #include <sstream>
 #include <limits>
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include <srt.h>
 
 // Constants
 constexpr int NUM_STREAMS = 2;

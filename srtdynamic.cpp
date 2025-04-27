@@ -269,7 +269,7 @@ void senderThread(int stream_id) {
                 memcpy((void*)(payload_ptr + sizeof(uint64_t)), (const void*)&pkt.group_id, sizeof(uint64_t));
                 
                 // Enforce bitrate with sleep
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 
                 sender_sockets[stream_id].sendmsg(pkt.payload.data(), pkt.payload.size());
             }

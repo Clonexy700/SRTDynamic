@@ -258,10 +258,11 @@ void senderThread(int stream_id) {
                 }
             }
             
-            for (const auto& pkt : batch) {
+            for (auto& pkt : batch) {
                 // Re-embed timestamp and group_id
-                memcpy(pkt.payload.data(), &pkt.timestamp, sizeof(uint64_t));
-                memcpy(pkt.payload.data() + sizeof(uint64_t), &pkt.group_id, sizeof(uint64_t));
+                char* payload_ptr = const_cast<char*>(pkt.payload.data());
+                memcpy((void*)payload_ptr, (const void*)&pkt.timestamp, sizeof(uint64_t));
+                memcpy((void*)(payload_ptr + sizeof(uint64_t)), (const void*)&pkt.group_id, sizeof(uint64_t));
                 
                 // Enforce bitrate with sleep
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));

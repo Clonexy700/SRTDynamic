@@ -25,6 +25,10 @@ constexpr int BATCH_SIZE = 7;
 constexpr int STATS_INTERVAL_MS = 100;
 constexpr int UPDATE_INTERVAL_MS = 1000;
 
+// Port configuration for each stream
+const int SENDER_PORTS[NUM_STREAMS] = {12345, 12346};
+const int RECEIVER_PORTS[NUM_STREAMS] = {20000, 20001};
+
 // Packet structure
 struct Packet {
     int stream_id;
@@ -178,7 +182,7 @@ std::string generateLogFilename() {
     std::tm tm;
     localtime_s(&tm, &time);
     std::stringstream ss;
-    ss << "log_" << std::put_time(&tm, "%Y%m%d_%H%M%S") << ".csv";
+    ss << "stats_" << std::put_time(&tm, "%Y%m%d_%H%M%S") << ".csv";
     return ss.str();
 }
 
@@ -277,44 +281,49 @@ void senderThread(int stream_id) {
 
 void statsThread() {
     try {
-        std::vector<SRT_TRACEBSTATS> stats(NUM_STREAMS);
-        std::vector<std::vector<double>> latencies(NUM_STREAMS);
+        std::vector<SRT_TRACEBSTATS> sender_stats(NUM_STREAMS);
+        std::vector<SRT_TRACEBSTATS> receiver_stats(NUM_STREAMS);
         
         while (running) {
             std::this_thread::sleep_for(std::chrono::milliseconds(STATS_INTERVAL_MS));
             
             for (int i = 0; i < NUM_STREAMS; ++i) {
-                sender_sockets[i].getStats(&stats[i]);
-                
-                // Calculate latencies
-                double min_latency = DBL_MAX;
-                double max_latency = 0;
-                double sum_latency = 0;
-                
-                for (double lat : latencies[i]) {
-                    min_latency = min(min_latency, lat);
-                    max_latency = max(max_latency, lat);
-                    sum_latency += lat;
-                }
-                
-                double avg_latency = latencies[i].empty() ? 0 : sum_latency / latencies[i].size();
+                sender_sockets[i].getStats(&sender_stats[i]);
+                receiver_sockets[i].getStats(&receiver_stats[i]);
                 
                 // Log to CSV
                 {
                     std::lock_guard<std::mutex> lock(log_mutex);
                     log_file << getCurrentTime() << ","
-                            << i << ","
-                            << stats[i].pktSent << ","
-                            << stats[i].pktRecv << ","
-                            << stats[i].pktSndLoss << ","  // Changed from pktLoss to pktSndLoss
-                            << stats[i].mbpsBandwidth << ","
-                            << "0" << "," // group_id
-                            << min_latency << ","
-                            << avg_latency << ","
-                            << max_latency << "\n";
+                            << "Stream " << (i + 1) << ","
+                            << "net_delay (G1)," << 100 << ","  // Example value
+                            << "delay (G1)," << 4000 << ","     // Example value
+                            << "gen_loss (G1)," << 0 << ","     // Example value
+                            << "overhead (G2)," << 20 << ","
+                            << "pktFlowWindow (G2)," << sender_stats[i].pktFlowWindow << ","
+                            << "pktCongestionWindow (G2)," << sender_stats[i].pktCongestionWindow << ","
+                            << "pktFlightSize (G2)," << sender_stats[i].pktFlightSize << ","
+                            << "byteAvailSndBuf (G2)," << sender_stats[i].byteAvailSndBuf << ","
+                            << "byteAvailRcvBuf (G2)," << receiver_stats[i].byteAvailRcvBuf << ","
+                            << "msRTT (G3)," << sender_stats[i].msRTT << ","
+                            << "mbpsSendRate (G3)," << sender_stats[i].mbpsSendRate << ","
+                            << "mbpsRecvRate (G3)," << receiver_stats[i].mbpsRecvRate << ","
+                            << "mbpsBandwidth (G4)," << sender_stats[i].mbpsBandwidth << ","
+                            << "pktSent (G4)," << sender_stats[i].pktSent << ","
+                            << "pktRetrans (G4)," << sender_stats[i].pktRetrans << ","
+                            << "pktSentTotal (G4)," << sender_stats[i].pktSentTotal << ","
+                            << "pktSentUnique (G4)," << sender_stats[i].pktSentUnique << ","
+                            << "pktSndLoss (G4)," << sender_stats[i].pktSndLoss << ","
+                            << "pktRecv (G4)," << receiver_stats[i].pktRecv << ","
+                            << "pktRecvTotal (G4)," << receiver_stats[i].pktRecvTotal << ","
+                            << "pktRecvUnique (G4)," << receiver_stats[i].pktRecvUnique << ","
+                            << "pktRecvLoss (G4)," << receiver_stats[i].pktRcvLoss << ","
+                            << "byteSent (G4)," << sender_stats[i].byteSent << ","
+                            << "byteSentUnique (G4)," << sender_stats[i].byteSentUnique << ","
+                            << "byteRecv (G4)," << receiver_stats[i].byteRecv << ","
+                            << "byteRecvUnique (G4)," << receiver_stats[i].byteRecvUnique << ","
+                            << "byteRcvLoss (G4)," << receiver_stats[i].byteRcvLoss << "\n";
                 }
-                
-                latencies[i].clear();
             }
         }
     } catch (const std::exception& e) {
@@ -338,6 +347,19 @@ int main() {
         sender_sockets.resize(NUM_STREAMS);
         receiver_sockets.resize(NUM_STREAMS);
         
+        // Open log file and write header
+        log_file.open(generateLogFilename());
+        log_file << "Timepoint,Stream,"
+                << "net_delay (G1),delay (G1),gen_loss (G1),"
+                << "overhead (G2),pktFlowWindow (G2),pktCongestionWindow (G2),pktFlightSize (G2),"
+                << "byteAvailSndBuf (G2),byteAvailRcvBuf (G2),"
+                << "msRTT (G3),mbpsSendRate (G3),mbpsRecvRate (G3),"
+                << "mbpsBandwidth (G4),pktSent (G4),pktRetrans (G4),"
+                << "pktSentTotal (G4),pktSentUnique (G4),pktSndLoss (G4),"
+                << "pktRecv (G4),pktRecvTotal (G4),pktRecvUnique (G4),pktRecvLoss (G4),"
+                << "byteSent (G4),byteSentUnique (G4),"
+                << "byteRecv (G4),byteRecvUnique (G4),byteRcvLoss (G4)\n";
+        
         for (int i = 0; i < NUM_STREAMS; ++i) {
             sender_sockets[i].create();
             receiver_sockets[i].create();
@@ -345,15 +367,11 @@ int main() {
             sender_sockets[i].configureLiveStream();
             receiver_sockets[i].configureLiveStream();
             
-            // Configure sender and receiver addresses (example)
-            sender_sockets[i].connect("127.0.0.1", 5000 + i);
-            receiver_sockets[i].bind("127.0.0.1", 5000 + i);
+            // Configure sender and receiver addresses with specific ports
+            sender_sockets[i].connect("127.0.0.1", SENDER_PORTS[i]);
+            receiver_sockets[i].bind("127.0.0.1", RECEIVER_PORTS[i]);
             receiver_sockets[i].listen();
         }
-
-        // Open log file
-        log_file.open(generateLogFilename());
-        log_file << "Timepoint,StreamID,pktSent,pktRecv,pktLoss,mbpsBandwidth,groupID,minLatency,avgLatency,maxLatency\n";
 
         // Install signal handler
         signal(SIGINT, signalHandler);
